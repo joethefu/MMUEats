@@ -1,0 +1,92 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mmueats
+      POSTGRES_USER: mmueats
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mmueats}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mmueats"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # These override anything set in backend/.env, since inside the Docker
+      # network the database/broker are reachable by service name, not
+      # localhost. Everything else (SECRET_KEY, email, M-Pesa, Firebase, Maps)
+      # still comes from backend/.env as normal.
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DATABASE_URL: postgres://mmueats:${POSTGRES_PASSWORD:-mmueats}@db:5432/mmueats
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CELERY_TASK_ALWAYS_EAGER: "False"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - media_data:/app/media
+      - static_data:/app/staticfiles
+    expose:
+      - "8000"
+
+  celery_worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["celery", "-A", "config", "worker", "--loglevel=info"]
+    env_file:
+      - ./backend/.env
+    environment:
+      DEBUG: "False"
+      DATABASE_URL: postgres://mmueats:${POSTGRES_PASSWORD:-mmueats}@db:5432/mmueats
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CELERY_TASK_ALWAYS_EAGER: "False"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - media_data:/app/media
+
+  web:
+    build:
+      context: ./web
+      args:
+        VITE_API_BASE_URL: /api
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-80}:80"
+    depends_on:
+      - backend
+    volumes:
+      - static_data:/app/staticfiles:ro
+      - media_data:/app/media:ro
+
+volumes:
+  postgres_data:
+  media_data:
+  static_data:

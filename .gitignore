@@ -1,0 +1,15 @@
+backend/venv/
+backend/__pycache__/
+**/__pycache__/
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+backend/.env
+web/node_modules/
+web/dist/
+web/.env
+mobile/build/
+mobile/.dart_tool/
+.env
+*.log
+.DS_Store
