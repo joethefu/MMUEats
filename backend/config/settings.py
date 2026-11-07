@@ -172,6 +172,28 @@ STORAGES = {
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Uploads (food images, profile pictures, ad banners): local disk in development; in production set
+# the S3_* variables to use any S3-compatible storage (Cloudflare R2, Backblaze B2, AWS S3, ...)
+# so files survive redeploys. No application code changes are needed.
+S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "").strip()
+if S3_BUCKET_NAME:
+    _s3_options = {
+        "bucket_name": S3_BUCKET_NAME,
+        "access_key": os.environ.get("S3_ACCESS_KEY_ID", ""),
+        "secret_key": os.environ.get("S3_SECRET_ACCESS_KEY", ""),
+        "endpoint_url": os.environ.get("S3_ENDPOINT_URL", "") or None,
+        "region_name": os.environ.get("S3_REGION", "auto"),
+        "signature_version": "s3v4",
+        "file_overwrite": False,
+        "default_acl": None,
+        # Public base URL for files, e.g. https://pub-xxxx.r2.dev (no trailing slash).
+        # Leave blank to use private, expiring signed links instead.
+        "custom_domain": (os.environ.get("S3_PUBLIC_URL", "").replace("https://", "").replace("http://", "").strip("/") or None),
+        "querystring_auth": not os.environ.get("S3_PUBLIC_URL", "").strip(),
+        "url_protocol": "https:",
+    }
+    STORAGES["default"] = {"BACKEND": "storages.backends.s3.S3Storage", "OPTIONS": _s3_options}
 # NOTE: local disk storage for development. In production, swap MEDIA storage
 # for cloud object storage (e.g. S3/GCS) by changing DEFAULT_FILE_STORAGE only —
 # no application code should need to change.
