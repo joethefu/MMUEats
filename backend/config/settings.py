@@ -29,9 +29,22 @@ def env_list(key, default=""):
 
 
 # ==== Core ====
-SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-dev-only-change-me")
 DEBUG = env_bool("DEBUG", True)
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "django-insecure-dev-only-change-me"
+    else:
+        # Refuse to start in production with a missing/guessable key.
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured("SECRET_KEY environment variable is required when DEBUG is off.")
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
+if not DEBUG:
+    # Railway's health checker calls the app with this Host header.
+    ALLOWED_HOSTS.append("healthcheck.railway.app")
+# Needed for Django admin / any CSRF-protected POST over HTTPS, e.g. https://api.yourdomain.com
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "")
 
 # ==== Applications ====
 DJANGO_APPS = [
@@ -151,7 +164,11 @@ USE_TZ = True
 # ==== Static / Media ====
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+# Django 5.1+ configures storage through STORAGES (the old STATICFILES_STORAGE setting is ignored).
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},  # swapped for cloud storage in production
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -293,6 +310,8 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+    # Platform health checks call over plain HTTP inside the network; don't redirect them.
+    SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
     # Nginx (or another reverse proxy) terminates TLS and forwards this header —
     # without it Django can't tell an already-HTTPS request from a plain one.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
